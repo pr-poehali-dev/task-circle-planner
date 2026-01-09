@@ -161,8 +161,8 @@ const Index = () => {
           const pos = task.position || { x: 100, y: 100 };
           const vel = task.velocity || { x: 0, y: 0 };
 
-          const targetX = containerWidth - size;
-          const targetY = containerHeight - size;
+          const targetX = 0;
+          const targetY = 0;
           
           const dx = targetX - pos.x;
           const dy = targetY - pos.y;
