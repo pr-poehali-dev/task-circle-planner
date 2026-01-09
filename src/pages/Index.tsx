@@ -1,15 +1,17 @@
 import { useState } from 'react';
-import { Plus, List, Circle as CircleIcon } from 'lucide-react';
+import { Plus, List, Circle as CircleIcon, Pencil, Trash2, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { toast } from 'sonner';
 
 type Subtask = {
   id: string;
@@ -71,6 +73,9 @@ const Index = () => {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [filterType, setFilterType] = useState<'all' | 'overdue' | 'week' | 'month'>('all');
+  
   const [newTask, setNewTask] = useState<Omit<Task, 'id' | 'subtasks'>>({
     title: '',
     description: '',
@@ -78,6 +83,8 @@ const Index = () => {
     urgency: 5,
     deadline: '',
   });
+
+  const [newSubtasks, setNewSubtasks] = useState<string[]>(['']);
 
   const getCircleSize = (importance: number) => {
     return 60 + importance * 15;
@@ -102,13 +109,22 @@ const Index = () => {
   const handleTaskClick = (task: Task) => {
     setSelectedTask(task);
     setIsDialogOpen(true);
+    setIsEditMode(false);
   };
 
   const handleAddTask = () => {
+    const subtasks: Subtask[] = newSubtasks
+      .filter((text) => text.trim() !== '')
+      .map((text, index) => ({
+        id: `${Date.now()}-${index}`,
+        text: text.trim(),
+        completed: false,
+      }));
+
     const task: Task = {
       ...newTask,
       id: Date.now().toString(),
-      subtasks: [],
+      subtasks,
     };
     setTasks([...tasks, task]);
     setIsAddDialogOpen(false);
@@ -119,6 +135,27 @@ const Index = () => {
       urgency: 5,
       deadline: '',
     });
+    setNewSubtasks(['']);
+    toast.success('Задача добавлена!');
+  };
+
+  const handleEditTask = () => {
+    if (!selectedTask) return;
+    
+    setTasks(
+      tasks.map((task) =>
+        task.id === selectedTask.id ? selectedTask : task
+      )
+    );
+    setIsDialogOpen(false);
+    setIsEditMode(false);
+    toast.success('Задача обновлена!');
+  };
+
+  const handleDeleteTask = (taskId: string) => {
+    setTasks(tasks.filter((task) => task.id !== taskId));
+    setIsDialogOpen(false);
+    toast.success('Задача удалена!');
   };
 
   const toggleSubtask = (taskId: string, subtaskId: string) => {
@@ -144,6 +181,39 @@ const Index = () => {
     }
   };
 
+  const addSubtaskToSelected = () => {
+    if (!selectedTask) return;
+    const newSubtask: Subtask = {
+      id: `${Date.now()}`,
+      text: 'Новая подзадача',
+      completed: false,
+    };
+    const updatedTask = {
+      ...selectedTask,
+      subtasks: [...selectedTask.subtasks, newSubtask],
+    };
+    setSelectedTask(updatedTask);
+  };
+
+  const deleteSubtaskFromSelected = (subtaskId: string) => {
+    if (!selectedTask) return;
+    const updatedTask = {
+      ...selectedTask,
+      subtasks: selectedTask.subtasks.filter((st) => st.id !== subtaskId),
+    };
+    setSelectedTask(updatedTask);
+  };
+
+  const updateSubtaskText = (subtaskId: string, text: string) => {
+    if (!selectedTask) return;
+    setSelectedTask({
+      ...selectedTask,
+      subtasks: selectedTask.subtasks.map((st) =>
+        st.id === subtaskId ? { ...st, text } : st
+      ),
+    });
+  };
+
   const getDaysUntilDeadline = (deadline: string) => {
     const now = new Date();
     const deadlineDate = new Date(deadline);
@@ -151,6 +221,27 @@ const Index = () => {
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
     return diffDays;
   };
+
+  const getFilteredTasks = () => {
+    const now = new Date();
+    
+    return tasks.filter((task) => {
+      const daysUntil = getDaysUntilDeadline(task.deadline);
+      
+      switch (filterType) {
+        case 'overdue':
+          return daysUntil < 0;
+        case 'week':
+          return daysUntil >= 0 && daysUntil <= 7;
+        case 'month':
+          return daysUntil >= 0 && daysUntil <= 30;
+        default:
+          return true;
+      }
+    });
+  };
+
+  const filteredTasks = getFilteredTasks();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 p-8">
@@ -163,17 +254,33 @@ const Index = () => {
         </header>
 
         <Tabs defaultValue="visual" className="w-full">
-          <div className="flex justify-between items-center mb-6">
-            <TabsList className="bg-white/80 backdrop-blur">
-              <TabsTrigger value="visual" className="gap-2">
-                <CircleIcon className="w-4 h-4" />
-                Визуальный вид
-              </TabsTrigger>
-              <TabsTrigger value="list" className="gap-2">
-                <List className="w-4 h-4" />
-                Список задач
-              </TabsTrigger>
-            </TabsList>
+          <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
+            <div className="flex items-center gap-4">
+              <TabsList className="bg-white/80 backdrop-blur">
+                <TabsTrigger value="visual" className="gap-2">
+                  <CircleIcon className="w-4 h-4" />
+                  Визуальный вид
+                </TabsTrigger>
+                <TabsTrigger value="list" className="gap-2">
+                  <List className="w-4 h-4" />
+                  Список задач
+                </TabsTrigger>
+              </TabsList>
+              
+              <Select value={filterType} onValueChange={(value: any) => setFilterType(value)}>
+                <SelectTrigger className="w-[200px] bg-white/80 backdrop-blur">
+                  <Filter className="w-4 h-4 mr-2" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все задачи</SelectItem>
+                  <SelectItem value="overdue">Просроченные</SelectItem>
+                  <SelectItem value="week">На этой неделе</SelectItem>
+                  <SelectItem value="month">В этом месяце</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
             <Button
               onClick={() => setIsAddDialogOpen(true)}
               className="gap-2 animate-scale-in"
@@ -185,125 +292,234 @@ const Index = () => {
 
           <TabsContent value="visual" className="animate-fade-in">
             <Card className="p-8 bg-white/80 backdrop-blur min-h-[600px] relative">
-              <div className="flex flex-wrap gap-8 items-center justify-center">
-                {tasks.map((task, index) => {
-                  const size = getCircleSize(task.importance);
-                  return (
-                    <div
-                      key={task.id}
-                      onClick={() => handleTaskClick(task)}
-                      className="cursor-pointer transition-all duration-300 hover:scale-110 animate-fade-in"
-                      style={{
-                        animationDelay: `${index * 0.1}s`,
-                      }}
-                    >
+              {filteredTasks.length > 0 ? (
+                <div className="flex flex-wrap gap-8 items-center justify-center">
+                  {filteredTasks.map((task, index) => {
+                    const size = getCircleSize(task.importance);
+                    return (
                       <div
-                        className={`rounded-full border-4 flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow ${getCircleColor(
-                          task.urgency
-                        )}`}
+                        key={task.id}
+                        onClick={() => handleTaskClick(task)}
+                        className="cursor-pointer transition-all duration-300 hover:scale-110 animate-fade-in"
                         style={{
-                          width: `${size}px`,
-                          height: `${size}px`,
+                          animationDelay: `${index * 0.1}s`,
                         }}
                       >
-                        <div className="text-center p-4">
-                          <p className="font-semibold text-sm leading-tight">
-                            {task.title}
-                          </p>
+                        <div
+                          className={`rounded-full border-4 flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow ${getCircleColor(
+                            task.urgency
+                          )}`}
+                          style={{
+                            width: `${size}px`,
+                            height: `${size}px`,
+                          }}
+                        >
+                          <div className="text-center p-4">
+                            <p className="font-semibold text-sm leading-tight">
+                              {task.title}
+                            </p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex items-center justify-center h-[500px]">
+                  <p className="text-muted-foreground text-lg">Нет задач в этом фильтре</p>
+                </div>
+              )}
             </Card>
           </TabsContent>
 
           <TabsContent value="list" className="animate-fade-in">
             <div className="space-y-4">
-              {tasks.map((task, index) => {
-                const daysUntil = getDaysUntilDeadline(task.deadline);
-                const completedSubtasks = task.subtasks.filter((st) => st.completed).length;
-                return (
-                  <Card
-                    key={task.id}
-                    className="p-6 bg-white/80 backdrop-blur hover:shadow-lg transition-shadow cursor-pointer animate-fade-in"
-                    onClick={() => handleTaskClick(task)}
-                    style={{
-                      animationDelay: `${index * 0.1}s`,
-                    }}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <h3 className="text-xl font-semibold">{task.title}</h3>
-                          <Badge
-                            variant="outline"
-                            className={
-                              daysUntil < 7
-                                ? 'border-rose-500 text-rose-600'
-                                : 'border-primary text-primary'
-                            }
-                          >
-                            {daysUntil > 0
-                              ? `${daysUntil} дн.`
-                              : daysUntil === 0
-                              ? 'Сегодня'
-                              : 'Просрочено'}
-                          </Badge>
-                        </div>
-                        <p className="text-muted-foreground mb-3">{task.description}</p>
-                        <div className="flex gap-4 text-sm">
-                          <span className="text-muted-foreground">
-                            Важность: <span className="font-medium">{task.importance}/10</span>
-                          </span>
-                          <span className="text-muted-foreground">
-                            Срочность: <span className="font-medium">{task.urgency}/10</span>
-                          </span>
-                          <span className="text-muted-foreground">
-                            Подзадачи:{' '}
-                            <span className="font-medium">
-                              {completedSubtasks}/{task.subtasks.length}
+              {filteredTasks.length > 0 ? (
+                filteredTasks.map((task, index) => {
+                  const daysUntil = getDaysUntilDeadline(task.deadline);
+                  const completedSubtasks = task.subtasks.filter((st) => st.completed).length;
+                  return (
+                    <Card
+                      key={task.id}
+                      className="p-6 bg-white/80 backdrop-blur hover:shadow-lg transition-shadow cursor-pointer animate-fade-in"
+                      onClick={() => handleTaskClick(task)}
+                      style={{
+                        animationDelay: `${index * 0.1}s`,
+                      }}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h3 className="text-xl font-semibold">{task.title}</h3>
+                            <Badge
+                              variant="outline"
+                              className={
+                                daysUntil < 0
+                                  ? 'border-rose-600 text-rose-700 bg-rose-50'
+                                  : daysUntil < 7
+                                  ? 'border-orange-500 text-orange-600 bg-orange-50'
+                                  : 'border-primary text-primary bg-purple-50'
+                              }
+                            >
+                              {daysUntil > 0
+                                ? `${daysUntil} дн.`
+                                : daysUntil === 0
+                                ? 'Сегодня'
+                                : 'Просрочено'}
+                            </Badge>
+                          </div>
+                          <p className="text-muted-foreground mb-3">{task.description}</p>
+                          <div className="flex gap-4 text-sm">
+                            <span className="text-muted-foreground">
+                              Важность: <span className="font-medium">{task.importance}/10</span>
                             </span>
-                          </span>
+                            <span className="text-muted-foreground">
+                              Срочность: <span className="font-medium">{task.urgency}/10</span>
+                            </span>
+                            <span className="text-muted-foreground">
+                              Подзадачи:{' '}
+                              <span className="font-medium">
+                                {completedSubtasks}/{task.subtasks.length}
+                              </span>
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </Card>
-                );
-              })}
+                    </Card>
+                  );
+                })
+              ) : (
+                <Card className="p-12 bg-white/80 backdrop-blur text-center">
+                  <p className="text-muted-foreground text-lg">Нет задач в этом фильтре</p>
+                </Card>
+              )}
             </div>
           </TabsContent>
         </Tabs>
 
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle className="text-2xl">{selectedTask?.title}</DialogTitle>
+              <div className="flex justify-between items-start">
+                {isEditMode ? (
+                  <Input
+                    value={selectedTask?.title || ''}
+                    onChange={(e) =>
+                      setSelectedTask(selectedTask ? { ...selectedTask, title: e.target.value } : null)
+                    }
+                    className="text-2xl font-semibold"
+                  />
+                ) : (
+                  <DialogTitle className="text-2xl">{selectedTask?.title}</DialogTitle>
+                )}
+                <div className="flex gap-2">
+                  {isEditMode ? (
+                    <>
+                      <Button variant="outline" size="icon" onClick={() => setIsEditMode(false)}>
+                        ✕
+                      </Button>
+                      <Button size="icon" onClick={handleEditTask}>
+                        ✓
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button variant="outline" size="icon" onClick={() => setIsEditMode(true)}>
+                        <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        onClick={() => selectedTask && handleDeleteTask(selectedTask.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
             </DialogHeader>
             {selectedTask && (
               <div className="space-y-4">
                 <div>
-                  <p className="text-muted-foreground">{selectedTask.description}</p>
+                  {isEditMode ? (
+                    <Textarea
+                      value={selectedTask.description}
+                      onChange={(e) =>
+                        setSelectedTask({ ...selectedTask, description: e.target.value })
+                      }
+                    />
+                  ) : (
+                    <p className="text-muted-foreground">{selectedTask.description}</p>
+                  )}
                 </div>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="font-medium">Дедлайн:</span>{' '}
-                    {new Date(selectedTask.deadline).toLocaleDateString('ru-RU')}
+
+                {isEditMode ? (
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Дедлайн</Label>
+                      <Input
+                        type="date"
+                        value={selectedTask.deadline}
+                        onChange={(e) =>
+                          setSelectedTask({ ...selectedTask, deadline: e.target.value })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <Label>Важность: {selectedTask.importance}/10</Label>
+                      <Slider
+                        value={[selectedTask.importance]}
+                        onValueChange={(value) =>
+                          setSelectedTask({ ...selectedTask, importance: value[0] })
+                        }
+                        min={1}
+                        max={10}
+                        step={1}
+                      />
+                    </div>
+                    <div>
+                      <Label>Срочность: {selectedTask.urgency}/10</Label>
+                      <Slider
+                        value={[selectedTask.urgency]}
+                        onValueChange={(value) =>
+                          setSelectedTask({ ...selectedTask, urgency: value[0] })
+                        }
+                        min={1}
+                        max={10}
+                        step={1}
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <span className="font-medium">Важность:</span> {selectedTask.importance}/10
+                ) : (
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="font-medium">Дедлайн:</span>{' '}
+                      {new Date(selectedTask.deadline).toLocaleDateString('ru-RU')}
+                    </div>
+                    <div>
+                      <span className="font-medium">Важность:</span> {selectedTask.importance}/10
+                    </div>
+                    <div>
+                      <span className="font-medium">Срочность:</span> {selectedTask.urgency}/10
+                    </div>
+                    <div>
+                      <span className="font-medium">Осталось дней:</span>{' '}
+                      {getDaysUntilDeadline(selectedTask.deadline)}
+                    </div>
                   </div>
-                  <div>
-                    <span className="font-medium">Срочность:</span> {selectedTask.urgency}/10
-                  </div>
-                  <div>
-                    <span className="font-medium">Осталось дней:</span>{' '}
-                    {getDaysUntilDeadline(selectedTask.deadline)}
-                  </div>
-                </div>
+                )}
+
                 <div>
-                  <h4 className="font-semibold mb-3">Подзадачи</h4>
+                  <div className="flex justify-between items-center mb-3">
+                    <h4 className="font-semibold">Подзадачи</h4>
+                    {isEditMode && (
+                      <Button variant="outline" size="sm" onClick={addSubtaskToSelected}>
+                        <Plus className="w-4 h-4 mr-1" />
+                        Добавить
+                      </Button>
+                    )}
+                  </div>
                   <div className="space-y-2">
                     {selectedTask.subtasks.length > 0 ? (
                       selectedTask.subtasks.map((subtask) => (
@@ -313,16 +529,34 @@ const Index = () => {
                             onCheckedChange={() =>
                               toggleSubtask(selectedTask.id, subtask.id)
                             }
+                            disabled={isEditMode}
                           />
-                          <span
-                            className={
-                              subtask.completed
-                                ? 'line-through text-muted-foreground'
-                                : ''
-                            }
-                          >
-                            {subtask.text}
-                          </span>
+                          {isEditMode ? (
+                            <>
+                              <Input
+                                value={subtask.text}
+                                onChange={(e) => updateSubtaskText(subtask.id, e.target.value)}
+                                className="flex-1"
+                              />
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => deleteSubtaskFromSelected(subtask.id)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </>
+                          ) : (
+                            <span
+                              className={
+                                subtask.completed
+                                  ? 'line-through text-muted-foreground'
+                                  : ''
+                              }
+                            >
+                              {subtask.text}
+                            </span>
+                          )}
                         </div>
                       ))
                     ) : (
@@ -336,7 +570,7 @@ const Index = () => {
         </Dialog>
 
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-2xl">Новая задача</DialogTitle>
             </DialogHeader>
@@ -391,6 +625,43 @@ const Index = () => {
                   step={1}
                   className="mt-2"
                 />
+              </div>
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <Label>Подзадачи (опционально)</Label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setNewSubtasks([...newSubtasks, ''])}
+                  >
+                    <Plus className="w-4 h-4 mr-1" />
+                    Добавить
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {newSubtasks.map((subtask, index) => (
+                    <div key={index} className="flex gap-2">
+                      <Input
+                        value={subtask}
+                        onChange={(e) => {
+                          const updated = [...newSubtasks];
+                          updated[index] = e.target.value;
+                          setNewSubtasks(updated);
+                        }}
+                        placeholder={`Подзадача ${index + 1}`}
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          setNewSubtasks(newSubtasks.filter((_, i) => i !== index));
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
               </div>
               <Button
                 onClick={handleAddTask}
