@@ -1,9 +1,9 @@
-import { useState } from 'react';
-import { Plus, List, Circle as CircleIcon, Pencil, Trash2, Filter } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, List, Circle as CircleIcon, Pencil, Trash2, Filter, Palette } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -27,54 +27,30 @@ type Task = {
   urgency: number;
   deadline: string;
   subtasks: Subtask[];
+  color?: string;
+  position?: { x: number; y: number };
 };
 
-const Index = () => {
-  const [tasks, setTasks] = useState<Task[]>([
-    {
-      id: '1',
-      title: 'Презентация проекта',
-      description: 'Подготовить презентацию для инвесторов',
-      importance: 9,
-      urgency: 8,
-      deadline: '2026-01-15',
-      subtasks: [
-        { id: '1-1', text: 'Создать слайды', completed: true },
-        { id: '1-2', text: 'Подготовить речь', completed: false },
-        { id: '1-3', text: 'Провести репетицию', completed: false },
-      ],
-    },
-    {
-      id: '2',
-      title: 'Планирование отпуска',
-      description: 'Забронировать билеты и отель',
-      importance: 5,
-      urgency: 3,
-      deadline: '2026-02-01',
-      subtasks: [
-        { id: '2-1', text: 'Выбрать направление', completed: true },
-        { id: '2-2', text: 'Забронировать отель', completed: false },
-      ],
-    },
-    {
-      id: '3',
-      title: 'Обучение новой технологии',
-      description: 'Изучить React и TypeScript',
-      importance: 7,
-      urgency: 5,
-      deadline: '2026-01-30',
-      subtasks: [
-        { id: '3-1', text: 'Пройти онлайн-курс', completed: false },
-        { id: '3-2', text: 'Сделать пет-проект', completed: false },
-      ],
-    },
-  ]);
+const STORAGE_KEY = 'planner-tasks';
 
+const colorOptions = [
+  { name: 'Фиолетовый', value: 'purple', bg: 'bg-purple-300', border: 'border-purple-400' },
+  { name: 'Розовый', value: 'pink', bg: 'bg-pink-300', border: 'border-pink-400' },
+  { name: 'Персиковый', value: 'peach', bg: 'bg-orange-200', border: 'border-orange-300' },
+  { name: 'Голубой', value: 'blue', bg: 'bg-blue-300', border: 'border-blue-400' },
+  { name: 'Зелёный', value: 'green', bg: 'bg-green-300', border: 'border-green-400' },
+  { name: 'Жёлтый', value: 'yellow', bg: 'bg-yellow-300', border: 'border-yellow-400' },
+  { name: 'Красный', value: 'red', bg: 'bg-red-300', border: 'border-red-400' },
+];
+
+const Index = () => {
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [filterType, setFilterType] = useState<'all' | 'overdue' | 'week' | 'month'>('all');
+  const [draggedTask, setDraggedTask] = useState<string | null>(null);
   
   const [newTask, setNewTask] = useState<Omit<Task, 'id' | 'subtasks'>>({
     title: '',
@@ -82,28 +58,128 @@ const Index = () => {
     importance: 5,
     urgency: 5,
     deadline: '',
+    color: 'purple',
   });
 
   const [newSubtasks, setNewSubtasks] = useState<string[]>(['']);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        setTasks(parsed);
+      } catch (e) {
+        console.error('Failed to parse saved tasks', e);
+      }
+    } else {
+      setTasks([
+        {
+          id: '1',
+          title: 'Презентация проекта',
+          description: 'Подготовить презентацию для инвесторов',
+          importance: 9,
+          urgency: 8,
+          deadline: '2026-01-15',
+          color: 'purple',
+          subtasks: [
+            { id: '1-1', text: 'Создать слайды', completed: true },
+            { id: '1-2', text: 'Подготовить речь', completed: false },
+            { id: '1-3', text: 'Провести репетицию', completed: false },
+          ],
+          position: { x: 100, y: 100 },
+        },
+        {
+          id: '2',
+          title: 'Планирование отпуска',
+          description: 'Забронировать билеты и отель',
+          importance: 5,
+          urgency: 3,
+          deadline: '2026-02-01',
+          color: 'pink',
+          subtasks: [
+            { id: '2-1', text: 'Выбрать направление', completed: true },
+            { id: '2-2', text: 'Забронировать отель', completed: false },
+          ],
+          position: { x: 300, y: 200 },
+        },
+        {
+          id: '3',
+          title: 'Обучение новой технологии',
+          description: 'Изучить React и TypeScript',
+          importance: 7,
+          urgency: 5,
+          deadline: '2026-01-30',
+          color: 'blue',
+          subtasks: [
+            { id: '3-1', text: 'Пройти онлайн-курс', completed: false },
+            { id: '3-2', text: 'Сделать пет-проект', completed: false },
+          ],
+          position: { x: 500, y: 150 },
+        },
+      ]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tasks.length > 0) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+    }
+  }, [tasks]);
 
   const getCircleSize = (importance: number) => {
     return 60 + importance * 15;
   };
 
-  const getCircleColor = (urgency: number) => {
-    const colors = [
-      'bg-purple-100 border-purple-200',
-      'bg-purple-200 border-purple-300',
-      'bg-purple-300 border-purple-400',
-      'bg-pink-200 border-pink-300',
-      'bg-pink-300 border-pink-400',
-      'bg-pink-400 border-pink-500',
-      'bg-rose-300 border-rose-400',
-      'bg-rose-400 border-rose-500',
-      'bg-rose-500 border-rose-600',
-      'bg-rose-600 border-rose-700',
-    ];
-    return colors[urgency - 1] || colors[4];
+  const getCircleColorClasses = (color: string = 'purple', urgency: number) => {
+    const colorMap: Record<string, string[]> = {
+      purple: [
+        'bg-purple-100 border-purple-200',
+        'bg-purple-200 border-purple-300',
+        'bg-purple-300 border-purple-400',
+        'bg-purple-400 border-purple-500',
+      ],
+      pink: [
+        'bg-pink-100 border-pink-200',
+        'bg-pink-200 border-pink-300',
+        'bg-pink-300 border-pink-400',
+        'bg-pink-400 border-pink-500',
+      ],
+      peach: [
+        'bg-orange-100 border-orange-200',
+        'bg-orange-200 border-orange-300',
+        'bg-orange-300 border-orange-400',
+        'bg-orange-400 border-orange-500',
+      ],
+      blue: [
+        'bg-blue-100 border-blue-200',
+        'bg-blue-200 border-blue-300',
+        'bg-blue-300 border-blue-400',
+        'bg-blue-400 border-blue-500',
+      ],
+      green: [
+        'bg-green-100 border-green-200',
+        'bg-green-200 border-green-300',
+        'bg-green-300 border-green-400',
+        'bg-green-400 border-green-500',
+      ],
+      yellow: [
+        'bg-yellow-100 border-yellow-200',
+        'bg-yellow-200 border-yellow-300',
+        'bg-yellow-300 border-yellow-400',
+        'bg-yellow-400 border-yellow-500',
+      ],
+      red: [
+        'bg-red-100 border-red-200',
+        'bg-red-200 border-red-300',
+        'bg-red-300 border-red-400',
+        'bg-red-400 border-red-500',
+      ],
+    };
+
+    const colors = colorMap[color] || colorMap.purple;
+    const index = Math.min(Math.floor(urgency / 3), colors.length - 1);
+    return colors[index];
   };
 
   const handleTaskClick = (task: Task) => {
@@ -125,6 +201,7 @@ const Index = () => {
       ...newTask,
       id: Date.now().toString(),
       subtasks,
+      position: { x: Math.random() * 600, y: Math.random() * 400 },
     };
     setTasks([...tasks, task]);
     setIsAddDialogOpen(false);
@@ -134,6 +211,7 @@ const Index = () => {
       importance: 5,
       urgency: 5,
       deadline: '',
+      color: 'purple',
     });
     setNewSubtasks(['']);
     toast.success('Задача добавлена!');
@@ -223,8 +301,6 @@ const Index = () => {
   };
 
   const getFilteredTasks = () => {
-    const now = new Date();
-    
     return tasks.filter((task) => {
       const daysUntil = getDaysUntilDeadline(task.deadline);
       
@@ -239,6 +315,34 @@ const Index = () => {
           return true;
       }
     });
+  };
+
+  const handleDragStart = (e: React.DragEvent, taskId: string) => {
+    setDraggedTask(taskId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    if (!draggedTask) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    setTasks(
+      tasks.map((task) =>
+        task.id === draggedTask
+          ? { ...task, position: { x: Math.max(0, x - 75), y: Math.max(0, y - 75) } }
+          : task
+      )
+    );
+    setDraggedTask(null);
   };
 
   const filteredTasks = getFilteredTasks();
@@ -291,39 +395,48 @@ const Index = () => {
           </div>
 
           <TabsContent value="visual" className="animate-fade-in">
-            <Card className="p-8 bg-white/80 backdrop-blur min-h-[600px] relative">
+            <Card
+              className="p-8 bg-white/80 backdrop-blur min-h-[600px] relative overflow-hidden"
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+            >
               {filteredTasks.length > 0 ? (
-                <div className="flex flex-wrap gap-8 items-center justify-center">
-                  {filteredTasks.map((task, index) => {
-                    const size = getCircleSize(task.importance);
-                    return (
+                filteredTasks.map((task, index) => {
+                  const size = getCircleSize(task.importance);
+                  const position = task.position || { x: 100 + index * 200, y: 100 };
+                  
+                  return (
+                    <div
+                      key={task.id}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, task.id)}
+                      onClick={() => handleTaskClick(task)}
+                      className="absolute cursor-move transition-all duration-500 hover:scale-110 animate-fade-in"
+                      style={{
+                        left: `${position.x}px`,
+                        top: `${position.y}px`,
+                        animationDelay: `${index * 0.1}s`,
+                      }}
+                    >
                       <div
-                        key={task.id}
-                        onClick={() => handleTaskClick(task)}
-                        className="cursor-pointer transition-all duration-300 hover:scale-110 animate-fade-in"
+                        className={`rounded-full border-4 flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-300 ${getCircleColorClasses(
+                          task.color,
+                          task.urgency
+                        )}`}
                         style={{
-                          animationDelay: `${index * 0.1}s`,
+                          width: `${size}px`,
+                          height: `${size}px`,
                         }}
                       >
-                        <div
-                          className={`rounded-full border-4 flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow ${getCircleColor(
-                            task.urgency
-                          )}`}
-                          style={{
-                            width: `${size}px`,
-                            height: `${size}px`,
-                          }}
-                        >
-                          <div className="text-center p-4">
-                            <p className="font-semibold text-sm leading-tight">
-                              {task.title}
-                            </p>
-                          </div>
+                        <div className="text-center p-4">
+                          <p className="font-semibold text-sm leading-tight">
+                            {task.title}
+                          </p>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  );
+                })
               ) : (
                 <div className="flex items-center justify-center h-[500px]">
                   <p className="text-muted-foreground text-lg">Нет задач в этом фильтре</p>
@@ -456,6 +569,23 @@ const Index = () => {
 
                 {isEditMode ? (
                   <div className="space-y-4">
+                    <div>
+                      <Label>Цвет задачи</Label>
+                      <div className="flex gap-2 mt-2">
+                        {colorOptions.map((color) => (
+                          <button
+                            key={color.value}
+                            onClick={() => setSelectedTask({ ...selectedTask, color: color.value })}
+                            className={`w-10 h-10 rounded-full border-4 transition-all ${color.bg} ${
+                              selectedTask.color === color.value
+                                ? 'border-primary scale-110'
+                                : 'border-gray-300 hover:scale-105'
+                            }`}
+                            title={color.name}
+                          />
+                        ))}
+                      </div>
+                    </div>
                     <div>
                       <Label>Дедлайн</Label>
                       <Input
@@ -592,6 +722,23 @@ const Index = () => {
                   onChange={(e) => setNewTask({ ...newTask, description: e.target.value })}
                   placeholder="Подробности задачи..."
                 />
+              </div>
+              <div>
+                <Label>Цвет задачи</Label>
+                <div className="flex gap-2 mt-2">
+                  {colorOptions.map((color) => (
+                    <button
+                      key={color.value}
+                      onClick={() => setNewTask({ ...newTask, color: color.value })}
+                      className={`w-10 h-10 rounded-full border-4 transition-all ${color.bg} ${
+                        newTask.color === color.value
+                          ? 'border-primary scale-110'
+                          : 'border-gray-300 hover:scale-105'
+                      }`}
+                      title={color.name}
+                    />
+                  ))}
+                </div>
               </div>
               <div>
                 <Label htmlFor="deadline">Дедлайн</Label>
