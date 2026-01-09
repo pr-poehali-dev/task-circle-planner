@@ -161,8 +161,14 @@ const Index = () => {
           const pos = task.position || { x: 100, y: 100 };
           const vel = task.velocity || { x: 0, y: 0 };
 
-          vel.x += GRAVITY;
-          vel.y += GRAVITY;
+          const targetX = containerWidth - size;
+          const targetY = containerHeight - size;
+          
+          const dx = targetX - pos.x;
+          const dy = targetY - pos.y;
+          
+          vel.x += dx > 0 ? GRAVITY : -GRAVITY;
+          vel.y += dy > 0 ? GRAVITY : -GRAVITY;
 
           vel.x *= FRICTION;
           vel.y *= FRICTION;
