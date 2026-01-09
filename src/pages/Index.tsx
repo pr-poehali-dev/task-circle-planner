@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Plus, List, Circle as CircleIcon, Pencil, Trash2, Filter, Palette } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Plus, List, Circle as CircleIcon, Pencil, Trash2, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -29,9 +29,13 @@ type Task = {
   subtasks: Subtask[];
   color?: string;
   position?: { x: number; y: number };
+  velocity?: { x: number; y: number };
 };
 
 const STORAGE_KEY = 'planner-tasks';
+const GRAVITY = 0.15;
+const FRICTION = 0.95;
+const BOUNCE = 0.6;
 
 const colorOptions = [
   { name: 'Фиолетовый', value: 'purple', bg: 'bg-purple-300', border: 'border-purple-400' },
@@ -51,6 +55,8 @@ const Index = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [filterType, setFilterType] = useState<'all' | 'overdue' | 'week' | 'month'>('all');
   const [draggedTask, setDraggedTask] = useState<string | null>(null);
+  const animationFrameRef = useRef<number>();
+  const containerRef = useRef<HTMLDivElement>(null);
   
   const [newTask, setNewTask] = useState<Omit<Task, 'id' | 'subtasks'>>({
     title: '',
@@ -68,7 +74,10 @@ const Index = () => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        setTasks(parsed);
+        setTasks(parsed.map((task: Task) => ({
+          ...task,
+          velocity: task.velocity || { x: 0, y: 0 }
+        })));
       } catch (e) {
         console.error('Failed to parse saved tasks', e);
       }
@@ -87,7 +96,8 @@ const Index = () => {
             { id: '1-2', text: 'Подготовить речь', completed: false },
             { id: '1-3', text: 'Провести репетицию', completed: false },
           ],
-          position: { x: 100, y: 100 },
+          position: { x: 200, y: 100 },
+          velocity: { x: 0, y: 0 },
         },
         {
           id: '2',
@@ -101,7 +111,8 @@ const Index = () => {
             { id: '2-1', text: 'Выбрать направление', completed: true },
             { id: '2-2', text: 'Забронировать отель', completed: false },
           ],
-          position: { x: 300, y: 200 },
+          position: { x: 400, y: 150 },
+          velocity: { x: 0, y: 0 },
         },
         {
           id: '3',
@@ -115,7 +126,8 @@ const Index = () => {
             { id: '3-1', text: 'Пройти онлайн-курс', completed: false },
             { id: '3-2', text: 'Сделать пет-проект', completed: false },
           ],
-          position: { x: 500, y: 150 },
+          position: { x: 600, y: 200 },
+          velocity: { x: 0, y: 0 },
         },
       ]);
     }
@@ -126,6 +138,131 @@ const Index = () => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
     }
   }, [tasks]);
+
+  useEffect(() => {
+    const animate = () => {
+      if (draggedTask) {
+        animationFrameRef.current = requestAnimationFrame(animate);
+        return;
+      }
+
+      setTasks((prevTasks) => {
+        const container = containerRef.current;
+        if (!container) return prevTasks;
+
+        const containerRect = container.getBoundingClientRect();
+        const containerWidth = containerRect.width - 16;
+        const containerHeight = containerRect.height - 16;
+
+        const updated = prevTasks.map((task) => {
+          const size = getCircleSize(task.importance);
+          const radius = size / 2;
+          
+          const pos = task.position || { x: 100, y: 100 };
+          const vel = task.velocity || { x: 0, y: 0 };
+
+          vel.x += GRAVITY;
+          vel.y += GRAVITY;
+
+          vel.x *= FRICTION;
+          vel.y *= FRICTION;
+
+          pos.x += vel.x;
+          pos.y += vel.y;
+
+          if (pos.x < 0) {
+            pos.x = 0;
+            vel.x *= -BOUNCE;
+          }
+          if (pos.x > containerWidth - size) {
+            pos.x = containerWidth - size;
+            vel.x *= -BOUNCE;
+          }
+          if (pos.y < 0) {
+            pos.y = 0;
+            vel.y *= -BOUNCE;
+          }
+          if (pos.y > containerHeight - size) {
+            pos.y = containerHeight - size;
+            vel.y *= -BOUNCE;
+          }
+
+          return {
+            ...task,
+            position: pos,
+            velocity: vel,
+          };
+        });
+
+        for (let i = 0; i < updated.length; i++) {
+          for (let j = i + 1; j < updated.length; j++) {
+            const task1 = updated[i];
+            const task2 = updated[j];
+
+            const size1 = getCircleSize(task1.importance);
+            const size2 = getCircleSize(task2.importance);
+            const radius1 = size1 / 2;
+            const radius2 = size2 / 2;
+
+            const pos1 = task1.position || { x: 0, y: 0 };
+            const pos2 = task2.position || { x: 0, y: 0 };
+
+            const center1 = { x: pos1.x + radius1, y: pos1.y + radius1 };
+            const center2 = { x: pos2.x + radius2, y: pos2.y + radius2 };
+
+            const dx = center2.x - center1.x;
+            const dy = center2.y - center1.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            const minDistance = radius1 + radius2;
+
+            if (distance < minDistance && distance > 0) {
+              const angle = Math.atan2(dy, dx);
+              const overlap = minDistance - distance;
+
+              const moveX = (overlap / 2) * Math.cos(angle);
+              const moveY = (overlap / 2) * Math.sin(angle);
+
+              updated[i] = {
+                ...task1,
+                position: {
+                  x: pos1.x - moveX,
+                  y: pos1.y - moveY,
+                },
+                velocity: {
+                  x: (task1.velocity?.x || 0) - moveX * 0.5,
+                  y: (task1.velocity?.y || 0) - moveY * 0.5,
+                },
+              };
+
+              updated[j] = {
+                ...task2,
+                position: {
+                  x: pos2.x + moveX,
+                  y: pos2.y + moveY,
+                },
+                velocity: {
+                  x: (task2.velocity?.x || 0) + moveX * 0.5,
+                  y: (task2.velocity?.y || 0) + moveY * 0.5,
+                },
+              };
+            }
+          }
+        }
+
+        return updated;
+      });
+
+      animationFrameRef.current = requestAnimationFrame(animate);
+    };
+
+    animationFrameRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [draggedTask]);
 
   const getCircleSize = (importance: number) => {
     return 60 + importance * 15;
@@ -201,7 +338,8 @@ const Index = () => {
       ...newTask,
       id: Date.now().toString(),
       subtasks,
-      position: { x: Math.random() * 600, y: Math.random() * 400 },
+      position: { x: Math.random() * 400 + 100, y: Math.random() * 200 + 50 },
+      velocity: { x: 0, y: 0 },
     };
     setTasks([...tasks, task]);
     setIsAddDialogOpen(false);
@@ -317,31 +455,39 @@ const Index = () => {
     });
   };
 
-  const handleDragStart = (e: React.DragEvent, taskId: string) => {
+  const handleMouseDown = (e: React.MouseEvent, taskId: string) => {
+    e.stopPropagation();
     setDraggedTask(taskId);
-    e.dataTransfer.effectAllowed = 'move';
+    
+    const task = tasks.find(t => t.id === taskId);
+    if (task) {
+      setTasks(tasks.map(t => 
+        t.id === taskId 
+          ? { ...t, velocity: { x: 0, y: 0 } }
+          : t
+      ));
+    }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!draggedTask || !containerRef.current) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const task = tasks.find(t => t.id === draggedTask);
+    if (!task) return;
+
+    const size = getCircleSize(task.importance);
+    const x = e.clientX - rect.left - size / 2;
+    const y = e.clientY - rect.top - size / 2;
+
+    setTasks(tasks.map(t => 
+      t.id === draggedTask 
+        ? { ...t, position: { x, y }, velocity: { x: 0, y: 0 } }
+        : t
+    ));
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    if (!draggedTask) return;
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    setTasks(
-      tasks.map((task) =>
-        task.id === draggedTask
-          ? { ...task, position: { x: Math.max(0, x - 75), y: Math.max(0, y - 75) } }
-          : task
-      )
-    );
+  const handleMouseUp = () => {
     setDraggedTask(null);
   };
 
@@ -396,37 +542,35 @@ const Index = () => {
 
           <TabsContent value="visual" className="animate-fade-in">
             <Card
-              className="p-8 bg-white/80 backdrop-blur min-h-[600px] relative overflow-hidden"
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
+              ref={containerRef}
+              className="p-2 bg-white/80 backdrop-blur min-h-[600px] relative overflow-hidden"
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
             >
               {filteredTasks.length > 0 ? (
-                filteredTasks.map((task, index) => {
+                filteredTasks.map((task) => {
                   const size = getCircleSize(task.importance);
-                  const position = task.position || { x: 100 + index * 200, y: 100 };
+                  const position = task.position || { x: 100, y: 100 };
                   
                   return (
                     <div
                       key={task.id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, task.id)}
-                      onClick={() => handleTaskClick(task)}
-                      className="absolute cursor-move transition-all duration-500 hover:scale-110 animate-fade-in"
+                      onMouseDown={(e) => handleMouseDown(e, task.id)}
+                      onClick={() => !draggedTask && handleTaskClick(task)}
+                      className="absolute cursor-grab active:cursor-grabbing select-none transition-shadow hover:shadow-xl"
                       style={{
                         left: `${position.x}px`,
                         top: `${position.y}px`,
-                        animationDelay: `${index * 0.1}s`,
+                        width: `${size}px`,
+                        height: `${size}px`,
                       }}
                     >
                       <div
-                        className={`rounded-full border-4 flex items-center justify-center shadow-lg hover:shadow-xl transition-all duration-300 ${getCircleColorClasses(
+                        className={`w-full h-full rounded-full border-4 flex items-center justify-center shadow-lg ${getCircleColorClasses(
                           task.color,
                           task.urgency
                         )}`}
-                        style={{
-                          width: `${size}px`,
-                          height: `${size}px`,
-                        }}
                       >
                         <div className="text-center p-4">
                           <p className="font-semibold text-sm leading-tight">
